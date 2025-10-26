@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Light mode - Clean cybersecurity theme */
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 189 97% 55%;
+    --primary-foreground: 222 47% 11%;
+    
+    --cyber-glow: 189 97% 55%;
+    --cyber-accent: 271 91% 65%;
+    
+    --secondary: 271 91% 65%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 189 97% 55%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 189 97% 55%;
+
+    --radius: 0.5rem;
+    
+    --shadow-cyber: 0 0 20px hsl(189 97% 55% / 0.3);
+    --shadow-glow: 0 0 40px hsl(189 97% 55% / 0.2);
+  }
+
+  .dark {
+    /* Dark mode - Deep cybersecurity theme */
+    --background: 222 47% 4%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 6%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 189 97% 55%;
+    --primary-foreground: 222 47% 11%;
+    
+    --cyber-glow: 189 97% 55%;
+    --cyber-accent: 271 91% 65%;
+
+    --secondary: 271 91% 65%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 271 91% 65%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 189 97% 55%;
+    
+    --shadow-cyber: 0 0 30px hsl(189 97% 55% / 0.5);
+    --shadow-glow: 0 0 60px hsl(189 97% 55% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
