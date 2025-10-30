@@ -1,26 +1,38 @@
 package com.passwordcracker.controller;
 
 import com.passwordcracker.service.CrackingService;
+import com.passwordcracker.repository.JdbcResultRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.stereotype.Controller;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+@Controller
+@PropertySource("classpath:application.properties")
 @RestController
 @RequestMapping("/api")
 public class FileUploadController {
 
     private static final Logger log = LoggerFactory.getLogger(FileUploadController.class);
     private final CrackingService crackingService;
+    private final JdbcResultRepository resultRepository;
 
-    public FileUploadController(CrackingService crackingService) {
+    public FileUploadController(CrackingService crackingService, JdbcResultRepository resultRepository) {
         this.crackingService = crackingService;
+        this.resultRepository = resultRepository;
     }
+
+    @Value("${wordlist.directory:wordlists}")
+    private String wordlistDirectory;
 
     /**
      * Uploads a file (stored temporarily) and starts a cracking job.
@@ -53,6 +65,20 @@ public class FileUploadController {
         } catch (Exception e) {
             log.error("Unexpected error starting job", e);
             return ResponseEntity.internalServerError().body(new ApiError("Unexpected error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Lists available wordlists dynamically by querying the database.
+     */
+    @GetMapping("/wordlists")
+    public ResponseEntity<?> listWordlists() {
+        try {
+            List<String> wordlists = resultRepository.getAllWordlists();
+            return ResponseEntity.ok(wordlists);
+        } catch (Exception e) {
+            log.error("Failed to list wordlists", e);
+            return ResponseEntity.internalServerError().body(new ApiError("Failed to list wordlists: " + e.getMessage()));
         }
     }
 

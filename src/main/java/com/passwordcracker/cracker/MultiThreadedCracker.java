@@ -25,7 +25,7 @@ public class MultiThreadedCracker implements Cracker {
     private static final Logger log = LoggerFactory.getLogger(MultiThreadedCracker.class);
 
     private final ConcurrentMap<Long, JobState> activeJobs = new ConcurrentHashMap<>();
-    private final ExecutorService executorService;
+    private final ForkJoinPool forkJoinPool;
     private final int batchSize;
 
     private record JobState(
@@ -36,15 +36,14 @@ public class MultiThreadedCracker implements Cracker {
     }
 
     @Autowired
-    public MultiThreadedCracker(ExecutorService executorService,
-                                @Value("${cracker.batchSize:5000}") int batchSize) {
-        this.executorService = executorService;
+    public MultiThreadedCracker(@Value("${cracker.batchSize:5000}") int batchSize) {
+        this.forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
         this.batchSize = batchSize;
     }
 
     @Override
     public CompletableFuture<Optional<String>> crack(Path wordlistPath, Path targetFile, Long jobId) {
-        log.info("JOB_START (Multi-threaded): Starting job ID {}", jobId);
+        log.info("JOB_START (Optimized Multi-threaded): Starting job ID {}", jobId);
 
         JobState jobState = new JobState(
                 new AtomicBoolean(false),
@@ -56,7 +55,7 @@ public class MultiThreadedCracker implements Cracker {
             return CompletableFuture.failedFuture(new IllegalStateException("Job ID " + jobId + " already exists."));
         }
 
-        CompletableFuture.runAsync(() -> {
+        forkJoinPool.submit(() -> {
             try (BufferedReader reader = Files.newBufferedReader(wordlistPath, java.nio.charset.StandardCharsets.UTF_8)) {
                 List<String> batch = new ArrayList<>(batchSize);
                 String line;
@@ -72,30 +71,24 @@ public class MultiThreadedCracker implements Cracker {
                     submitBatch(batch, targetFile, jobState, jobId);
                 }
 
-                // Wait for worker futures to finish and complete result if not found
-                CompletableFuture.runAsync(() -> {
-                    for (Future<?> f : jobState.workerFutures()) {
-                        try {
-                            f.get();
-                        } catch (CancellationException | InterruptedException e) {
-                            // ignore cancellations/interruption
-                        } catch (ExecutionException e) {
-                            // If a worker had a real error, propagate it
-                            jobState.resultFuture().completeExceptionally(e.getCause());
-                            return;
-                        }
+                jobState.workerFutures().forEach(f -> {
+                    try {
+                        f.get();
+                    } catch (Exception e) {
+                        log.error("Worker error for job {}", jobId, e);
                     }
-                    if (!jobState.found().get()) {
-                        log.info("JOB_COMPLETE (Multi-threaded): Job {} finished. Password not found.", jobId);
-                        jobState.resultFuture().complete(Optional.empty());
-                    }
-                }, executorService);
+                });
+
+                if (!jobState.found().get()) {
+                    log.info("JOB_COMPLETE (Optimized Multi-threaded): Job {} finished. Password not found.", jobId);
+                    jobState.resultFuture().complete(Optional.empty());
+                }
 
             } catch (IOException e) {
-                log.error("JOB_FAILED (Multi-threaded): IO error for job {}", jobId, e);
+                log.error("JOB_FAILED (Optimized Multi-threaded): IO error for job {}", jobId, e);
                 jobState.resultFuture().completeExceptionally(e);
             }
-        }, executorService);
+        });
 
         jobState.resultFuture().whenComplete((res, err) -> activeJobs.remove(jobId));
         return jobState.resultFuture();
@@ -103,70 +96,25 @@ public class MultiThreadedCracker implements Cracker {
 
     private void submitBatch(List<String> batch, Path targetFile, JobState jobState, Long jobId) {
         Runnable crackingTask = () -> {
-            // for (String candidate : batch) {
-            //     log.debug("Job {}: Trying password candidate: '{}'", jobId, candidate);
-            //     // Check if already found by another thread or if cancelled
-            //     if (jobState.found().get() || Thread.currentThread().isInterrupted()) {
-            //         return;
-            //     }
-
-            //     try {
-            //         // Create ZipFile instance with the candidate password
-            //         ZipFile zipFile = new ZipFile(targetFile.toFile(), candidate.toCharArray());
-
-            //         // Attempt to read file headers. If password is correct, this succeeds.
-            //         // If incorrect, it throws a ZipException.
-            //         zipFile.getFileHeaders();
-
-            //         // --- Password Correct ---
-            //         // Atomically set 'found' to true if it was false.
-            //         // Only the first thread to find the password completes the future.
-            //         if (jobState.found().compareAndSet(false, true)) {
-            //             log.info("FOUND (Multi-threaded): Password found for job {}: {}", jobId, candidate);
-            //             jobState.resultFuture().complete(Optional.of(candidate));
-            //         }
-            //         return; // Password found, stop this worker thread
-
-            //     } catch (ZipException e) {
-            //         // --- Wrong Password ---
-            //         // This is expected, continue to the next candidate password.
-            //         // Log only if needed for debugging extreme verbosity: log.trace("Job {}: Tried password '{}' - incorrect.", jobId, candidate);
-            //     } catch (IOException ioEx) {
-            //         // --- Error Reading Zip File ---
-            //         // Log the error and complete the job exceptionally. Stop this worker.
-            //         log.error("JOB_FAILED (Multi-threaded): IO error reading target file for job {}: {}", jobId, ioEx.getMessage());
-            //         jobState.resultFuture().completeExceptionally(ioEx); // Fail the main job future
-            //         jobState.found().set(true); // Signal other threads to stop (though they might finish current batch)
-            //         return;
-            //     } catch (RuntimeException rtEx) {
-            //         // --- Unexpected Error ---
-            //         // Log the error and complete the job exceptionally. Stop this worker.
-            //         log.error("JOB_FAILED (Multi-threaded): Unexpected runtime error during cracking for job {}: {}", jobId, rtEx.getMessage(), rtEx);
-            //         jobState.resultFuture().completeExceptionally(rtEx); // Fail the main job future
-            //         jobState.found().set(true); // Signal other threads to stop
-            //         return;
-            //     }
-            // }
             for (String candidate : batch) {
                 log.debug("Job {}: Trying password candidate: '{}'", jobId, candidate);
-                try {
-                    ZipFile zipFile = new ZipFile(targetFile.toFile(), candidate.toCharArray());
+                try (ZipFile zipFile = new ZipFile(targetFile.toFile(), candidate.toCharArray())) {
                     // Try to extract the first file entry to really test the password
                     String entryName = zipFile.getFileHeaders().get(0).getFileName();
                     zipFile.extractFile(entryName, System.getProperty("java.io.tmpdir"));
-            
+
                     log.info("Job {}: Password '{}' succeeded (extracted entry)", jobId, candidate);
                     if (jobState.found().compareAndSet(false, true)) {
                         log.info("FOUND (Multi-threaded): Password found for job {}: {}", jobId, candidate);
                         jobState.resultFuture().complete(Optional.of(candidate));
                     }
                     return;
-            
+
                 } catch (ZipException e) {
                     log.debug("Job {}: Password '{}' failed (ZipException)", jobId, candidate);
                     // Wrong password or not a zip: continue
                 } catch (IOException ioEx) {
-                    log.error("JOB_FAILED (Multi-threaded): IO error reading target file for job {}: {}", jobId, ioEx.getMessage());
+                    log.error("JOB_FAILED (Multi-threaded): IO error closing ZipFile for job {}: {}", jobId, ioEx.getMessage());
                     jobState.resultFuture().completeExceptionally(ioEx);
                     jobState.found().set(true);
                     return;
@@ -180,7 +128,7 @@ public class MultiThreadedCracker implements Cracker {
             // If the loop finishes without finding the password in this batch, the worker is done.
         };
         // Submit the task to the executor service and add its Future to the job state
-        jobState.workerFutures().add(executorService.submit(crackingTask));
+        jobState.workerFutures().add(forkJoinPool.submit(crackingTask));
     }
 
     @Override

@@ -10,6 +10,8 @@ import org.springframework.stereotype.Repository;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 
+import java.util.List;
+
 @Repository
 public class JdbcResultRepository implements ResultRepository {
 
@@ -77,5 +79,14 @@ public class JdbcResultRepository implements ResultRepository {
         
         // queryForObject is perfect here, as we expect a single String result
         return jdbc.queryForObject(sql, String.class, jobId);
+    }
+
+    /**
+     * Retrieves all wordlists from the 'wordlists' table.
+     * @return A list of wordlist names
+     */
+    public List<String> getAllWordlists() {
+        String sql = "SELECT DISTINCT list_name FROM wordlists";
+        return jdbc.query(sql, (rs, rowNum) -> rs.getString("list_name"));
     }
 }

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Shield, Upload as UploadIcon, FileText, CheckCircle2, Moon, Sun, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "next-themes";
+import { useQuery } from "@tanstack/react-query";
 
 const Upload = () => {
   const [isDragging, setIsDragging] = useState(false);
@@ -18,6 +19,15 @@ const Upload = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
+
+  const { data: wordlists, isLoading } = useQuery({
+    queryKey: ["wordlists"],
+    queryFn: async (): Promise<string[]> => {
+      const response = await fetch("/api/wordlists");
+      if (!response.ok) throw new Error("Failed to fetch wordlists");
+      return response.json();
+    },
+  });
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -209,16 +219,25 @@ const Upload = () => {
               )}
             </div>
 
-            {/* Wordlist input */}
+            {/* Wordlist dropdown */}
             <div className="mt-4 flex items-center gap-2">
-              <input
-                type="text"
+              <select
                 value={wordlistInput}
                 onChange={(e) => setWordlistInput(e.target.value)}
-                placeholder="Wordlist (e.g. rockyou)"
                 className="w-full px-3 py-2 border border-border rounded-md bg-background"
-              />
-              <Button onClick={handleStartAnalysis} disabled={!uploadedFile || isProcessing}>
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <option>Loading...</option>
+                ) : (
+                  wordlists?.map((wordlist) => (
+                    <option key={wordlist} value={wordlist}>
+                      {wordlist}
+                    </option>
+                  ))
+                )}
+              </select>
+              <Button onClick={handleStartAnalysis} disabled={!uploadedFile || isProcessing || isLoading}>
                 Start
               </Button>
             </div>
