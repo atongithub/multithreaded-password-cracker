@@ -57,7 +57,7 @@ public class MultiThreadedCracker implements Cracker {
         }
 
         CompletableFuture.runAsync(() -> {
-            try (BufferedReader reader = Files.newBufferedReader(wordlistPath)) {
+            try (BufferedReader reader = Files.newBufferedReader(wordlistPath, java.nio.charset.StandardCharsets.UTF_8)) {
                 List<String> batch = new ArrayList<>(batchSize);
                 String line;
                 while ((line = reader.readLine()) != null) {
@@ -103,46 +103,77 @@ public class MultiThreadedCracker implements Cracker {
 
     private void submitBatch(List<String> batch, Path targetFile, JobState jobState, Long jobId) {
         Runnable crackingTask = () -> {
+            // for (String candidate : batch) {
+            //     log.debug("Job {}: Trying password candidate: '{}'", jobId, candidate);
+            //     // Check if already found by another thread or if cancelled
+            //     if (jobState.found().get() || Thread.currentThread().isInterrupted()) {
+            //         return;
+            //     }
+
+            //     try {
+            //         // Create ZipFile instance with the candidate password
+            //         ZipFile zipFile = new ZipFile(targetFile.toFile(), candidate.toCharArray());
+
+            //         // Attempt to read file headers. If password is correct, this succeeds.
+            //         // If incorrect, it throws a ZipException.
+            //         zipFile.getFileHeaders();
+
+            //         // --- Password Correct ---
+            //         // Atomically set 'found' to true if it was false.
+            //         // Only the first thread to find the password completes the future.
+            //         if (jobState.found().compareAndSet(false, true)) {
+            //             log.info("FOUND (Multi-threaded): Password found for job {}: {}", jobId, candidate);
+            //             jobState.resultFuture().complete(Optional.of(candidate));
+            //         }
+            //         return; // Password found, stop this worker thread
+
+            //     } catch (ZipException e) {
+            //         // --- Wrong Password ---
+            //         // This is expected, continue to the next candidate password.
+            //         // Log only if needed for debugging extreme verbosity: log.trace("Job {}: Tried password '{}' - incorrect.", jobId, candidate);
+            //     } catch (IOException ioEx) {
+            //         // --- Error Reading Zip File ---
+            //         // Log the error and complete the job exceptionally. Stop this worker.
+            //         log.error("JOB_FAILED (Multi-threaded): IO error reading target file for job {}: {}", jobId, ioEx.getMessage());
+            //         jobState.resultFuture().completeExceptionally(ioEx); // Fail the main job future
+            //         jobState.found().set(true); // Signal other threads to stop (though they might finish current batch)
+            //         return;
+            //     } catch (RuntimeException rtEx) {
+            //         // --- Unexpected Error ---
+            //         // Log the error and complete the job exceptionally. Stop this worker.
+            //         log.error("JOB_FAILED (Multi-threaded): Unexpected runtime error during cracking for job {}: {}", jobId, rtEx.getMessage(), rtEx);
+            //         jobState.resultFuture().completeExceptionally(rtEx); // Fail the main job future
+            //         jobState.found().set(true); // Signal other threads to stop
+            //         return;
+            //     }
+            // }
             for (String candidate : batch) {
-                // Check if already found by another thread or if cancelled
-                if (jobState.found().get() || Thread.currentThread().isInterrupted()) {
-                    return;
-                }
-
+                log.debug("Job {}: Trying password candidate: '{}'", jobId, candidate);
                 try {
-                    // Create ZipFile instance with the candidate password
                     ZipFile zipFile = new ZipFile(targetFile.toFile(), candidate.toCharArray());
-
-                    // Attempt to read file headers. If password is correct, this succeeds.
-                    // If incorrect, it throws a ZipException.
-                    zipFile.getFileHeaders();
-
-                    // --- Password Correct ---
-                    // Atomically set 'found' to true if it was false.
-                    // Only the first thread to find the password completes the future.
+                    // Try to extract the first file entry to really test the password
+                    String entryName = zipFile.getFileHeaders().get(0).getFileName();
+                    zipFile.extractFile(entryName, System.getProperty("java.io.tmpdir"));
+            
+                    log.info("Job {}: Password '{}' succeeded (extracted entry)", jobId, candidate);
                     if (jobState.found().compareAndSet(false, true)) {
-                        log.info("FOUND (Multi-threaded): Password found for job {}", jobId);
+                        log.info("FOUND (Multi-threaded): Password found for job {}: {}", jobId, candidate);
                         jobState.resultFuture().complete(Optional.of(candidate));
                     }
-                    return; // Password found, stop this worker thread
-
+                    return;
+            
                 } catch (ZipException e) {
-                    // --- Wrong Password ---
-                    // This is expected, continue to the next candidate password.
-                    // Log only if needed for debugging extreme verbosity: log.trace("Job {}: Tried password '{}' - incorrect.", jobId, candidate);
+                    log.debug("Job {}: Password '{}' failed (ZipException)", jobId, candidate);
+                    // Wrong password or not a zip: continue
                 } catch (IOException ioEx) {
-                    // --- Error Reading Zip File ---
-                    // Log the error and complete the job exceptionally. Stop this worker.
                     log.error("JOB_FAILED (Multi-threaded): IO error reading target file for job {}: {}", jobId, ioEx.getMessage());
-                    jobState.resultFuture().completeExceptionally(ioEx); // Fail the main job future
-                    jobState.found().set(true); // Signal other threads to stop (though they might finish current batch)
+                    jobState.resultFuture().completeExceptionally(ioEx);
+                    jobState.found().set(true);
                     return;
                 } catch (RuntimeException rtEx) {
-                    // --- Unexpected Error ---
-                    // Log the error and complete the job exceptionally. Stop this worker.
                     log.error("JOB_FAILED (Multi-threaded): Unexpected runtime error during cracking for job {}: {}", jobId, rtEx.getMessage(), rtEx);
-                    jobState.resultFuture().completeExceptionally(rtEx); // Fail the main job future
-                    jobState.found().set(true); // Signal other threads to stop
+                    jobState.resultFuture().completeExceptionally(rtEx);
+                    jobState.found().set(true);
                     return;
                 }
             }
