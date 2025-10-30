@@ -29,33 +29,53 @@ public class FileUploadController {
     public ResponseEntity<?> uploadAndStart(@RequestParam("file") MultipartFile file,
                                             @RequestParam("wordlist") String wordlist) {
         if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body("Empty file");
+            return ResponseEntity.badRequest().body(new ApiError("Empty file"));
         }
 
-        // We must save the uploaded file to a temporary location
-        // so the background threads can access it.
         Path targetFile;
         try {
-            // Create a secure temporary directory for this job
-            // The OS will clean this up later
             Path tempDir = Files.createTempDirectory("cracker-job-");
             targetFile = tempDir.resolve(file.getOriginalFilename());
             file.transferTo(targetFile);
             log.info("Received file '{}', saved to temporary path: {}", file.getOriginalFilename(), targetFile);
         } catch (IOException e) {
             log.error("Failed to store temporary file", e);
-            return ResponseEntity.internalServerError().body("Failed to store file: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(new ApiError("Failed to store file: " + e.getMessage()));
         }
 
-        // Start the cracking job, passing the *path* to the saved file
-        Long jobId = crackingService.startJob(file.getOriginalFilename(), wordlist, targetFile);
-        return ResponseEntity.ok().body("Job started: " + jobId);
+        // Validate wordlist exists before starting job
+        try {
+            Long jobId = crackingService.startJob(file.getOriginalFilename(), wordlist, targetFile);
+            return ResponseEntity.ok().body(new ApiResponse("Job started", jobId));
+        } catch (IllegalArgumentException e) {
+            log.error("Wordlist error: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(new ApiError(e.getMessage()));
+        } catch (Exception e) {
+            log.error("Unexpected error starting job", e);
+            return ResponseEntity.internalServerError().body(new ApiError("Unexpected error: " + e.getMessage()));
+        }
     }
 
+    // Helper classes for structured error responses
+    static class ApiError {
+        public final String error;
+        public ApiError(String error) { this.error = error; }
+    }
+    static class ApiResponse {
+        public final String message;
+        public final Object data;
+        public ApiResponse(String message, Object data) { this.message = message; this.data = data; }
+    }
+
+    /**
+     * Retrieves the result of a cracking job by job ID.
+     */
     @GetMapping("/result/{jobId}")
     public ResponseEntity<?> getResult(@PathVariable Long jobId) {
         var result = crackingService.getResult(jobId);
-        if (result == null) return ResponseEntity.notFound().build();
+        if (result == null) {
+            return ResponseEntity.status(404).body("Result not found or job still in progress.");
+        }
         return ResponseEntity.ok(result);
     }
 
