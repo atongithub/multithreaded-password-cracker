@@ -1,6 +1,6 @@
 # Multithreaded Password Cracker
 
-A Java Spring Boot service to attempt recovering passwords from password-protected archives using wordlists. Supports single-threaded, multi-threaded, and GPU-accelerated cracking (Hashcat integration).
+A Java Spring Boot service to attempt recovering passwords from password-protected archives using wordlists. Supports single-threaded, multi-threaded cracking.
 
 ---
 
@@ -81,3 +81,4 @@ spring.devtools.restart.enabled=false
 ## License
 
 This project is released under the MIT License. See `LICENSE` for details.
+
