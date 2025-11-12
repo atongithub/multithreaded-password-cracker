@@ -1,0 +1,18 @@
+D:\Projects\multithreaded-password-cracker\src\main\resources\static\node_modules
+\src\main\resources\static\node_modules
+
+# Java/Maven
+/target/
+.mvn/
+*.log
+
+# Node.js (inside src/main/resources/static)
+src/main/resources/static/node_modules/
+src/main/resources/static/dist/
+.npm
+.eslintcache
+
+# IDE files
+.idea/
+*.iml
+.vscode/
